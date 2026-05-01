@@ -95,6 +95,75 @@ export const getInsightData = (metricRow) => {
   };
 };
 
+// ─── Decision Narrative — one paragraph story summarising the developer ───────
+export const getNarrative = (metricRow) => {
+  if (!metricRow) return null;
+
+  const {
+    developer_id, month,
+    pattern_hint, bug_rate_pct,
+    avg_cycle_time_days, avg_lead_time_days,
+    prod_deployments, escaped_bugs,
+  } = metricRow;
+
+  const name = getFirstName(developer_id);
+
+  // Collect risk signals
+  const risks = [];
+  const strengths = [];
+
+  if (bug_rate_pct === 0)        strengths.push('zero production bugs');
+  else if (bug_rate_pct >= 50)   risks.push(`a ${bug_rate_pct}% bug rate`);
+
+  if (avg_cycle_time_days <= 4)  strengths.push(`efficient cycle time (${avg_cycle_time_days} days)`);
+  else if (avg_cycle_time_days > 6) risks.push(`slow cycle time (${avg_cycle_time_days} days)`);
+
+  if (avg_lead_time_days <= 3.5) strengths.push(`fast lead time (${avg_lead_time_days} days)`);
+  else if (avg_lead_time_days > 5) risks.push(`high lead time (${avg_lead_time_days} days)`);
+
+  const devDeps = deployments.filter(
+    (d) => d.developer_id === developer_id && d.month === month
+  );
+  const hotfixes = devDeps.filter((d) => d.release_type === 'hotfix');
+  if (hotfixes.length === 0 && prod_deployments >= 2) strengths.push('stable planned deployments');
+  if (hotfixes.length >= 2) risks.push(`${hotfixes.length} hotfix deployments`);
+
+  const devPRs = pullRequests.filter(
+    (p) => p.developer_id === developer_id && p.month === month
+  );
+  if (devPRs.length > 0) {
+    const avgWait = devPRs.reduce((s, p) => s + p.review_wait_hours, 0) / devPRs.length;
+    if (avgWait > 20) risks.push(`slow PR review wait (${avgWait.toFixed(1)} hrs)`);
+    else if (avgWait <= 12) strengths.push('fast PR reviews');
+  }
+
+  // Build narrative sentence
+  let narrative = '';
+
+  if (pattern_hint === 'Healthy flow') {
+    if (risks.length === 0) {
+      narrative = `${name} is performing efficiently this month with ${strengths.join(', ')}. No immediate risks detected — this is a strong, consistent delivery period.`;
+    } else {
+      narrative = `${name} is largely on track with ${strengths.join(', ')}, though there are minor concerns around ${risks.join(' and ')} that are worth monitoring.`;
+    }
+  } else if (pattern_hint === 'Quality watch') {
+    const riskText = risks.length > 0 ? risks.join(' and ') : `${escaped_bugs} escaped bug${escaped_bugs !== 1 ? 's' : ''}`;
+    if (strengths.length > 0) {
+      narrative = `${name} is delivering at a reasonable pace — ${strengths.join(', ')} — but quality needs attention due to ${riskText}. Addressing the root cause now will prevent this from becoming a recurring pattern.`;
+    } else {
+      narrative = `${name} has quality concerns this month with ${riskText}. Both delivery speed and testing coverage need to be reviewed before the next sprint.`;
+    }
+  } else if (pattern_hint === 'Needs review') {
+    if (strengths.length > 0) {
+      narrative = `${name} has some positives — ${strengths.join(', ')} — but the overall workflow is under strain due to ${risks.join(' and ')}. A focused conversation with the manager is recommended to identify and remove blockers.`;
+    } else {
+      narrative = `${name}'s workflow needs immediate attention. ${risks.length > 0 ? `Key concerns include ${risks.join(' and ')}.` : 'Multiple metrics are outside healthy ranges.'} This pattern, if unaddressed, will impact team delivery.`;
+    }
+  }
+
+  return narrative;
+};
+
 // ─── Deep "why" signals — always present, positive or negative ────────────────
 // Each signal has: { text, status } where status = 'good' | 'warn' | 'bad'
 export const getDeepSignals = (developerId, month, metricRow) => {
