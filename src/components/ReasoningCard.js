@@ -25,14 +25,14 @@ const ReasoningCard = ({ data }) => {
           const s = typeStyles[d.type];
           return (
             <div key={i} className={`rounded-xl border-l-4 ${s.border} ${s.bg} px-4 py-4`}>
-              /* Condition label */
+              {/* Condition label */}
               <div className="flex items-center gap-2 mb-2">
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.dot}`} />
                 <span className={`text-xs font-semibold uppercase tracking-wide ${s.condition}`}>
                   {d.condition}
                 </span>
               </div>
-              /* Diagnosis */
+             { /* Diagnosis */}
               <p className={`text-sm leading-relaxed ${s.text}`}>{d.diagnosis}</p>
             </div>
           );

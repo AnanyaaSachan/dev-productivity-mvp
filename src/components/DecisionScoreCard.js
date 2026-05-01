@@ -86,7 +86,7 @@ const DecisionScoreCard = ({ data }) => {
         </span>
       </div>
 
-      /* Score ring + dimensions */
+      {/* Score ring + dimensions */}
       <div className="flex items-center gap-8">
         <ScoreRing score={overall} color={overallMeta.color} />
 

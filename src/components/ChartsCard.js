@@ -8,7 +8,7 @@ import {
 import { metrics as allMetrics } from '../data/data';
 import { getTeamAverages } from '../utils/insightEngine';
 
-// ─── Line chart — developer trend over all available months ──────────────────
+// Line chart — developer trend over all available months 
 const TrendLineChart = ({ developerId }) => {
   const devData = allMetrics
     .filter((m) => m.developer_id === developerId)
@@ -46,7 +46,7 @@ const TrendLineChart = ({ developerId }) => {
   );
 };
 
-// ─── Bar chart — developer vs team average ────────────────────────────────────
+// Bar chart — developer vs team average 
 const TeamBarChart = ({ metricRow }) => {
   const teamAvg = getTeamAverages(metricRow.team_name, metricRow.month);
   if (!teamAvg) return null;
@@ -79,7 +79,7 @@ const TeamBarChart = ({ metricRow }) => {
   );
 };
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// Main component 
 const ChartsCard = ({ data }) => {
   if (!data) return null;
 

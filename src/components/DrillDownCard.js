@@ -77,7 +77,7 @@ const DrillDownCard = ({ data }) => {
 
       <div className="flex flex-col gap-3">
 
-        /* PR Details  */
+        {/* PR Details  */}
         <Section
           title="Pull Request Details"
           count={`${devPRs.length} PRs`}
@@ -117,7 +117,7 @@ const DrillDownCard = ({ data }) => {
           )}
         </Section>
 
-        /*Bug Details */
+        {/*Bug Details */}
         <Section
           title="Bug Reports"
           count={devBugs.length === 0 ? 'No bugs' : `${devBugs.length} bug${devBugs.length > 1 ? 's' : ''}`}
@@ -157,7 +157,7 @@ const DrillDownCard = ({ data }) => {
           )}
         </Section>
 
-        /* Deployment Logs  */
+        {/* Deployment Logs  */}
         <Section
           title="Deployment Logs"
           count={hotfixCount > 0 ? `${devDeps.length} deployments (${hotfixCount} hotfix)` : `${devDeps.length} deployments`}
@@ -195,7 +195,7 @@ const DrillDownCard = ({ data }) => {
           )}
         </Section>
 
-        /* Jira Issues */
+        {/* Jira Issues */}
         <Section
           title="Jira Issues"
           count={`${devIssues.length} issues`}
