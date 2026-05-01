@@ -176,6 +176,35 @@ export const getDeepSignals = (developerId, month, metricRow) => {
   return signals;
 };
 
+// ─── Team averages for a given month ─────────────────────────────────────────
+import { metrics as allMetrics } from '../data/data';
+
+export const getTeamAverages = (teamName, month) => {
+  const teamRows = allMetrics.filter(
+    (m) => m.team_name === teamName && m.month === month
+  );
+  if (teamRows.length === 0) return null;
+
+  const avg = (key) =>
+    teamRows.reduce((s, r) => s + r[key], 0) / teamRows.length;
+
+  return {
+    avg_cycle_time_days:  parseFloat(avg('avg_cycle_time_days').toFixed(1)),
+    avg_lead_time_days:   parseFloat(avg('avg_lead_time_days').toFixed(1)),
+    merged_prs:           parseFloat(avg('merged_prs').toFixed(1)),
+    prod_deployments:     parseFloat(avg('prod_deployments').toFixed(1)),
+    bug_rate_pct:         parseFloat(avg('bug_rate_pct').toFixed(1)),
+  };
+};
+
+// ─── Month-over-month trend for a developer ───────────────────────────────────
+export const getPreviousMonthData = (developerId, currentMonth) => {
+  const sorted = allMetrics
+    .filter((m) => m.developer_id === developerId && m.month < currentMonth)
+    .sort((a, b) => b.month.localeCompare(a.month));
+  return sorted[0] || null;
+};
+
 // ─── Metric evaluation — returns { label, color } for each metric ─────────────
 export const evaluateMetrics = (metricRow) => {
   if (!metricRow) return {};
