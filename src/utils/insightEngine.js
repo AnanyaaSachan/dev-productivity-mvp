@@ -243,69 +243,125 @@ export const evaluateMetrics = (metricRow) => {
   };
 };
 
-// ─── Action recommendations ────────────────────────────────────────────────────
+// ─── Action recommendations — fully personalized with name + metric values ─────
 export const getRecommendedActions = (metricRow, developerId, month) => {
   if (!metricRow) return [];
 
-  const { bug_rate_pct, avg_cycle_time_days, avg_lead_time_days, pattern_hint } = metricRow;
+  const { bug_rate_pct, avg_cycle_time_days, avg_lead_time_days, pattern_hint, merged_prs } = metricRow;
+  const name = getFirstName(developerId);
   const actions = [];
 
-  // Bug quality actions
+  // ── Bug quality ──────────────────────────────────────────────────────────────
   if (bug_rate_pct >= 50) {
     const devBugs = bugReports.filter(
       (b) => b.developer_id === developerId && b.month_found === month
     );
     const causes = [...new Set(devBugs.map((b) => b.root_cause_bucket))];
+    const highSeverity = devBugs.some((b) => b.severity === 'high');
+
     if (causes.includes('test gap')) {
-      actions.push('Add unit and integration tests for the areas where bugs escaped.');
+      actions.push(
+        `${name}'s bug rate is ${bug_rate_pct}% due to a test gap — add unit and integration tests specifically for the feature areas where bugs escaped.`
+      );
     }
     if (causes.includes('edge case')) {
-      actions.push('Review edge cases during design — add them explicitly to acceptance criteria.');
+      actions.push(
+        `The escaped bug was caused by an unhandled edge case — ${name} should add edge cases explicitly to acceptance criteria during ticket grooming.`
+      );
     }
     if (causes.includes('release config')) {
-      actions.push('Audit release configuration and add a pre-deploy config validation step.');
+      actions.push(
+        `A release config issue caused a production bug — ${name}'s team should add a pre-deploy config validation step to the pipeline.`
+      );
     }
-    actions.push('Reduce PR size so reviewers can catch issues more easily.');
+    if (highSeverity) {
+      actions.push(
+        `At least one bug was high severity — ${name} should prioritize a post-mortem to understand the root cause and prevent recurrence.`
+      );
+    }
+
+    const devPRsForBug = pullRequests.filter(
+      (p) => p.developer_id === developerId && p.month === month
+    );
+    const avgLines = devPRsForBug.length > 0
+      ? devPRsForBug.reduce((s, p) => s + p.lines_changed, 0) / devPRsForBug.length
+      : 0;
+    if (avgLines > 400) {
+      actions.push(
+        `${name}'s PRs average ${Math.round(avgLines)} lines — reducing PR size will make it easier for reviewers to catch issues before they reach production.`
+      );
+    }
   }
 
-  // Cycle time actions
-  if (avg_cycle_time_days > 5) {
-    actions.push('Break down large tickets into smaller sub-tasks to reduce time in progress.');
-    actions.push('Identify blockers early in the sprint and escalate them quickly.');
+  // ── Cycle time ───────────────────────────────────────────────────────────────
+  if (avg_cycle_time_days > 6) {
+    const devIssues = jiraIssues.filter(
+      (j) => j.developer_id === developerId && j.month === month
+    );
+    const highComplexity = devIssues.filter((j) => j.story_points >= 5);
+    if (highComplexity.length > 0) {
+      actions.push(
+        `${name}'s cycle time is ${avg_cycle_time_days} days, partly driven by ${highComplexity.length} high-complexity issue${highComplexity.length > 1 ? 's' : ''} — break these into smaller sub-tasks during sprint planning.`
+      );
+    } else {
+      actions.push(
+        `${name}'s cycle time is ${avg_cycle_time_days} days — identify what is causing work to stay in progress so long and escalate blockers earlier in the sprint.`
+      );
+    }
   } else if (avg_cycle_time_days > 4) {
-    actions.push('Monitor ticket complexity during sprint planning and flag high-point items.');
+    actions.push(
+      `${name}'s cycle time is ${avg_cycle_time_days} days — slightly above the healthy range. Review ticket scope during grooming to keep tasks focused and completable within 3–4 days.`
+    );
   }
 
-  // Lead time / PR wait actions
+  // ── Lead time / PR review wait ───────────────────────────────────────────────
   const devPRs = pullRequests.filter(
     (p) => p.developer_id === developerId && p.month === month
   );
   if (devPRs.length > 0) {
-    const avgWait =
-      devPRs.reduce((s, p) => s + p.review_wait_hours, 0) / devPRs.length;
+    const avgWait = devPRs.reduce((s, p) => s + p.review_wait_hours, 0) / devPRs.length;
     if (avgWait > 20) {
-      actions.push('Agree on a team SLA for PR reviews (e.g. first review within 4 hours).');
+      actions.push(
+        `${name}'s PRs are waiting ${avgWait.toFixed(1)} hours on average for review — the team should agree on a review SLA (e.g. first review within 4 hours) to reduce lead time.`
+      );
     }
   }
 
-  if (avg_lead_time_days > 4) {
-    actions.push('Streamline the deployment pipeline — look for manual approval gates that can be automated.');
+  if (avg_lead_time_days > 4.5) {
+    actions.push(
+      `${name}'s lead time is ${avg_lead_time_days} days — look for manual approval gates or environment queues in the deployment pipeline that can be automated or parallelised.`
+    );
   }
 
-  // Hotfix pattern
+  // ── Hotfix pattern ───────────────────────────────────────────────────────────
   const devDeps = deployments.filter(
     (d) => d.developer_id === developerId && d.month === month
   );
   const hotfixes = devDeps.filter((d) => d.release_type === 'hotfix');
   if (hotfixes.length >= 1) {
-    actions.push('Investigate why hotfixes were needed and add regression tests to prevent recurrence.');
+    actions.push(
+      `${name} had ${hotfixes.length} hotfix deployment${hotfixes.length > 1 ? 's' : ''} this month — investigate what slipped through and add regression tests to prevent the same issue recurring.`
+    );
   }
 
-  // Healthy flow fallback
+  // ── Healthy flow — positive, specific actions ────────────────────────────────
   if (pattern_hint === 'Healthy flow' && actions.length === 0) {
-    actions.push('Maintain current workflow and practices.');
-    actions.push('Share your process with teammates as a reference.');
-    actions.push('Consider taking on a mentoring or code-review ownership role.');
+    if (bug_rate_pct === 0 && avg_cycle_time_days <= 4) {
+      actions.push(
+        `Since ${name}'s bug rate is 0% and cycle time is ${avg_cycle_time_days} days, consider taking on code review ownership to help raise team-wide quality.`
+      );
+      actions.push(
+        `${name} is completing work efficiently — this is a good time to tackle a higher-complexity ticket or a technical debt item that the team has been deferring.`
+      );
+    }
+    if (merged_prs >= 2) {
+      actions.push(
+        `${name} merged ${merged_prs} PRs cleanly this month — document the review patterns that are working well so the team can adopt them consistently.`
+      );
+    }
+    actions.push(
+      `${name}'s workflow is stable — use this momentum to mentor a teammate who is struggling with cycle time or quality issues.`
+    );
   }
 
   return actions;
