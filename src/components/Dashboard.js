@@ -10,6 +10,7 @@ import TrendCard from './TrendCard';
 import InsightCard from './InsightCard';
 import ReasoningCard from './ReasoningCard';
 import DeepSignals from './DeepSignals';
+import DrillDownCard from './DrillDownCard';
 import ActionCard from './ActionCard';
 import EmptyState from './EmptyState';
 
@@ -28,6 +29,7 @@ const Dashboard = ({ developer, data }) => {
       <InsightCard data={data} />
       <ReasoningCard data={data} />
       <DeepSignals data={data} />
+      <DrillDownCard data={data} />
       <ActionCard data={data} />
     </div>
   );
