@@ -164,6 +164,93 @@ export const getNarrative = (metricRow) => {
   return narrative;
 };
 
+// ─── Mini intelligence layer ──────────────────────────────────────────────────
+export const getIntelligence = (metricRow) => {
+  if (!metricRow) return null;
+
+  const {
+    developer_id, month,
+    bug_rate_pct, avg_cycle_time_days, avg_lead_time_days,
+    merged_prs, prod_deployments, pattern_hint,
+  } = metricRow;
+
+  const highBug     = bug_rate_pct >= 50;
+  const slowCycle   = avg_cycle_time_days > 5;
+  const highLead    = avg_lead_time_days > 4.5;
+  const lowThroughput = merged_prs < 2;
+
+  const devPRs  = pullRequests.filter((p) => p.developer_id === developer_id && p.month === month);
+  const avgWait = devPRs.length > 0
+    ? devPRs.reduce((s, p) => s + p.review_wait_hours, 0) / devPRs.length : 0;
+  const slowReview = avgWait > 20;
+
+  const devDeps  = deployments.filter((d) => d.developer_id === developer_id && d.month === month);
+  const hotfixes = devDeps.filter((d) => d.release_type === 'hotfix');
+
+  // ── Determine primary issue ──────────────────────────────────────────────
+  let primaryIssue = 'None';
+  let secondaryIssue = 'None';
+  let confidence = 'High';
+  let patternReason = '';
+
+  const issues = [];
+
+  if (highBug)       issues.push({ label: 'Quality',    weight: 3 });
+  if (slowCycle)     issues.push({ label: 'Speed',      weight: 2 });
+  if (highLead)      issues.push({ label: 'Pipeline',   weight: 2 });
+  if (slowReview)    issues.push({ label: 'Review',     weight: 1 });
+  if (lowThroughput) issues.push({ label: 'Throughput', weight: 1 });
+  if (hotfixes.length >= 2) issues.push({ label: 'Stability', weight: 2 });
+
+  // Sort by weight descending
+  issues.sort((a, b) => b.weight - a.weight);
+
+  if (issues.length === 0) {
+    primaryIssue   = 'None';
+    secondaryIssue = 'None';
+    confidence     = 'High';
+  } else if (issues.length === 1) {
+    primaryIssue   = issues[0].label;
+    secondaryIssue = 'None';
+    confidence     = 'High';
+  } else {
+    primaryIssue   = issues[0].label;
+    secondaryIssue = issues[1].label;
+    // If top two issues have same weight, confidence is medium
+    confidence = issues[0].weight === issues[1].weight ? 'Medium' : 'High';
+  }
+
+  // If only minor signals, lower confidence
+  if (issues.length > 0 && issues[0].weight === 1) confidence = 'Low';
+
+  // ── Pattern reason ───────────────────────────────────────────────────────
+  if (pattern_hint === 'Healthy flow') {
+    if (primaryIssue === 'None') {
+      patternReason = 'All metrics are within healthy ranges — no dominant issue detected.';
+    } else {
+      patternReason = `Mostly healthy, but a minor ${primaryIssue.toLowerCase()} signal is present and worth monitoring.`;
+    }
+  } else if (pattern_hint === 'Quality watch') {
+    if (highBug && !slowCycle) {
+      patternReason = `High bug rate (${bug_rate_pct}%) despite normal throughput — developer is shipping at pace but quality is not keeping up.`;
+    } else if (highBug && slowCycle) {
+      patternReason = `High bug rate (${bug_rate_pct}%) combined with slow cycle time (${avg_cycle_time_days} days) — both speed and quality are under pressure.`;
+    } else {
+      patternReason = `Quality signals are elevated. Bug rate is ${bug_rate_pct}% which exceeds the acceptable threshold.`;
+    }
+  } else if (pattern_hint === 'Needs review') {
+    if (slowCycle && !highBug) {
+      patternReason = `Cycle time is ${avg_cycle_time_days} days — significantly above the healthy range — despite no quality issues. Delivery pace is the primary concern.`;
+    } else if (highLead && slowReview) {
+      patternReason = `Lead time is elevated (${avg_lead_time_days} days) and PR review wait is ${avgWait.toFixed(1)} hours — the pipeline and review process are both contributing to delays.`;
+    } else {
+      patternReason = `Multiple metrics are outside healthy ranges. A holistic review of the workflow is needed.`;
+    }
+  }
+
+  return { primaryIssue, secondaryIssue, confidence, pattern: pattern_hint, patternReason };
+};
+
 // ─── Reasoning logic — diagnoses root problem from metric combinations ────────
 export const getReasoning = (metricRow) => {
   if (!metricRow) return null;

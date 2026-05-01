@@ -2,6 +2,7 @@
 import React from 'react';
 import ProfileCard from './ProfileCard';
 import NarrativeCard from './NarrativeCard';
+import IntelligenceCard from './IntelligenceCard';
 import MetricsGrid from './MetricsGrid';
 import InsightCard from './InsightCard';
 import ReasoningCard from './ReasoningCard';
@@ -18,6 +19,7 @@ const Dashboard = ({ developer, data }) => {
     <div className="flex flex-col gap-6">
       <ProfileCard developer={developer} />
       <NarrativeCard data={data} />
+      <IntelligenceCard data={data} />
       <MetricsGrid data={data} />
       <InsightCard data={data} />
       <ReasoningCard data={data} />
