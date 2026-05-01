@@ -10,6 +10,7 @@ import MetricsGrid from './MetricsGrid';
 import TeamComparisonCard from './TeamComparisonCard';
 import TrendCard from './TrendCard';
 import ScorecardCard from './ScorecardCard';
+import ChartsCard from './ChartsCard';
 import InsightCard from './InsightCard';
 import DrillDownCard from './DrillDownCard';
 import ActionCard from './ActionCard';
@@ -50,6 +51,7 @@ const Dashboard = ({ developer, data }) => {
       {/* 6. EVIDENCE */}
       <Divider label="Evidence" />
       <MetricsGrid data={data} />
+      <ChartsCard data={data} />
       <TeamComparisonCard data={data} />
       <TrendCard data={data} />
       <ScorecardCard data={data} />
