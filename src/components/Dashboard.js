@@ -3,6 +3,7 @@ import React from 'react';
 import ProfileCard from './ProfileCard';
 import NarrativeCard from './NarrativeCard';
 import IntelligenceCard from './IntelligenceCard';
+import ScorecardCard from './ScorecardCard';
 import MetricsGrid from './MetricsGrid';
 import TeamComparisonCard from './TeamComparisonCard';
 import TrendCard from './TrendCard';
@@ -13,15 +14,14 @@ import ActionCard from './ActionCard';
 import EmptyState from './EmptyState';
 
 const Dashboard = ({ developer, data }) => {
-  if (!developer || !data) {
-    return <EmptyState />;
-  }
+  if (!developer || !data) return <EmptyState />;
 
   return (
     <div className="flex flex-col gap-6">
       <ProfileCard developer={developer} />
       <NarrativeCard data={data} />
       <IntelligenceCard data={data} />
+      <ScorecardCard data={data} />
       <MetricsGrid data={data} />
       <TeamComparisonCard data={data} />
       <TrendCard data={data} />

@@ -266,9 +266,7 @@ const Dashboard = ({ developer, data }) => {
     );
 };
 
-// ============================================
-// MAIN APP COMPONENT
-// ============================================
+
 const App = () => {
     const [selectedDeveloper, setSelectedDeveloper] = useState('');
     const [selectedMonth, setSelectedMonth] = useState('');
@@ -329,8 +327,6 @@ const App = () => {
     );
 };
 
-// ============================================
-// RENDER APP
-// ============================================
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);

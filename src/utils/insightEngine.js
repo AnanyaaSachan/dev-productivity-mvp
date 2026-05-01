@@ -344,91 +344,120 @@ export const getTeamComparison = (metricRow) => {
   ].filter(Boolean);
 };
 
-// ─── Mini intelligence layer ──────────────────────────────────────────────────
-export const getIntelligence = (metricRow) => {
+// ─── Weighted scoring system ──────────────────────────────────────────────────
+// Normalises each metric to a 0–1 risk scale, applies weights, returns scores.
+export const getWeightedScore = (metricRow) => {
   if (!metricRow) return null;
 
   const {
-    developer_id, month,
-    bug_rate_pct, avg_cycle_time_days, avg_lead_time_days,
-    merged_prs, prod_deployments, pattern_hint,
+    bug_rate_pct,
+    avg_cycle_time_days,
+    avg_lead_time_days,
+    prod_deployments,
+    merged_prs,
   } = metricRow;
 
-  const highBug     = bug_rate_pct >= 50;
-  const slowCycle   = avg_cycle_time_days > 5;
-  const highLead    = avg_lead_time_days > 4.5;
-  const lowThroughput = merged_prs < 2;
+  // Normalise each metric to a 0–1 risk score (1 = worst, 0 = best)
+  // Thresholds chosen from healthy/critical ranges used elsewhere
+  const normBugRate     = Math.min(bug_rate_pct / 100, 1);                        // 0% → 0, 100% → 1
+  const normCycleTime   = Math.min(Math.max(avg_cycle_time_days - 2, 0) / 6, 1);  // 2d → 0, 8d → 1
+  const normLeadTime    = Math.min(Math.max(avg_lead_time_days  - 1, 0) / 6, 1);  // 1d → 0, 7d → 1
+  const normDeployments = Math.max(1 - (prod_deployments / 4), 0);                // 4+ → 0, 0 → 1
+  const normPRs         = Math.max(1 - (merged_prs / 4), 0);                      // 4+ → 0, 0 → 1
+
+  // Weighted risk contributions
+  const weights = {
+    quality:    { value: normBugRate,     weight: 0.40, label: 'Quality (Bug Rate)'       },
+    speed:      { value: normCycleTime,   weight: 0.20, label: 'Speed (Cycle Time)'       },
+    pipeline:   { value: normLeadTime,    weight: 0.20, label: 'Pipeline (Lead Time)'     },
+    delivery:   { value: normDeployments, weight: 0.10, label: 'Delivery (Deployments)'   },
+    throughput: { value: normPRs,         weight: 0.10, label: 'Throughput (PR Count)'    },
+  };
+
+  // Compute weighted scores
+  const scored = Object.entries(weights).map(([key, { value, weight, label }]) => ({
+    key,
+    label,
+    rawScore:      parseFloat((value * weight * 100).toFixed(1)),   // contribution to total
+    normalised:    parseFloat((value * 100).toFixed(1)),            // 0–100 risk %
+    weight:        weight * 100,                                     // weight as %
+  }));
+
+  // Total risk score (0–100)
+  const totalScore = parseFloat(
+    scored.reduce((s, m) => s + m.rawScore, 0).toFixed(1)
+  );
+
+  // Sort by raw contribution descending → highest = primary issue
+  const sorted = [...scored].sort((a, b) => b.rawScore - a.rawScore);
+  const primaryIssue   = sorted[0].rawScore > 0 ? sorted[0].label : 'None';
+  const secondaryIssue = sorted[1].rawScore > 0 ? sorted[1].label : 'None';
+
+  // Overall health label
+  const health =
+    totalScore <= 15 ? { label: 'Healthy',  color: 'green' } :
+    totalScore <= 35 ? { label: 'Moderate', color: 'amber' } :
+    totalScore <= 55 ? { label: 'At Risk',  color: 'red'   } :
+                       { label: 'Critical', color: 'red'   };
+
+  return { scored, totalScore, primaryIssue, secondaryIssue, health };
+};
+
+// ─── Mini intelligence layer — powered by weighted scoring ───────────────────
+export const getIntelligence = (metricRow) => {
+  if (!metricRow) return null;
+
+  const scored = getWeightedScore(metricRow);
+  if (!scored) return null;
+
+  const {
+    developer_id, month,
+    bug_rate_pct, avg_cycle_time_days, avg_lead_time_days, pattern_hint,
+  } = metricRow;
 
   const devPRs  = pullRequests.filter((p) => p.developer_id === developer_id && p.month === month);
   const avgWait = devPRs.length > 0
     ? devPRs.reduce((s, p) => s + p.review_wait_hours, 0) / devPRs.length : 0;
-  const slowReview = avgWait > 20;
 
-  const devDeps  = deployments.filter((d) => d.developer_id === developer_id && d.month === month);
-  const hotfixes = devDeps.filter((d) => d.release_type === 'hotfix');
+  // Confidence: high if top score is clearly dominant (>2x second)
+  const sortedScores = [...scored.scored].sort((a, b) => b.rawScore - a.rawScore);
+  const topScore     = sortedScores[0].rawScore;
+  const secondScore  = sortedScores[1].rawScore;
+  const confidence   =
+    topScore === 0              ? 'High'   :
+    topScore >= secondScore * 2 ? 'High'   :
+    topScore >= secondScore * 1.3 ? 'Medium' :
+                                    'Low';
 
-  // ── Determine primary issue ──────────────────────────────────────────────
-  let primaryIssue = 'None';
-  let secondaryIssue = 'None';
-  let confidence = 'High';
+  // Pattern reason
   let patternReason = '';
+  const highBug   = bug_rate_pct >= 50;
+  const slowCycle = avg_cycle_time_days > 5;
+  const highLead  = avg_lead_time_days > 4.5;
 
-  const issues = [];
-
-  if (highBug)       issues.push({ label: 'Quality',    weight: 3 });
-  if (slowCycle)     issues.push({ label: 'Speed',      weight: 2 });
-  if (highLead)      issues.push({ label: 'Pipeline',   weight: 2 });
-  if (slowReview)    issues.push({ label: 'Review',     weight: 1 });
-  if (lowThroughput) issues.push({ label: 'Throughput', weight: 1 });
-  if (hotfixes.length >= 2) issues.push({ label: 'Stability', weight: 2 });
-
-  // Sort by weight descending
-  issues.sort((a, b) => b.weight - a.weight);
-
-  if (issues.length === 0) {
-    primaryIssue   = 'None';
-    secondaryIssue = 'None';
-    confidence     = 'High';
-  } else if (issues.length === 1) {
-    primaryIssue   = issues[0].label;
-    secondaryIssue = 'None';
-    confidence     = 'High';
-  } else {
-    primaryIssue   = issues[0].label;
-    secondaryIssue = issues[1].label;
-    // If top two issues have same weight, confidence is medium
-    confidence = issues[0].weight === issues[1].weight ? 'Medium' : 'High';
-  }
-
-  // If only minor signals, lower confidence
-  if (issues.length > 0 && issues[0].weight === 1) confidence = 'Low';
-
-  // ── Pattern reason ───────────────────────────────────────────────────────
   if (pattern_hint === 'Healthy flow') {
-    if (primaryIssue === 'None') {
-      patternReason = 'All metrics are within healthy ranges — no dominant issue detected.';
-    } else {
-      patternReason = `Mostly healthy, but a minor ${primaryIssue.toLowerCase()} signal is present and worth monitoring.`;
-    }
+    patternReason = scored.totalScore <= 15
+      ? 'All weighted signals are low — no dominant risk area detected.'
+      : `Mostly healthy (risk score: ${scored.totalScore}/100), but a minor ${scored.primaryIssue.toLowerCase()} signal is present.`;
   } else if (pattern_hint === 'Quality watch') {
     if (highBug && !slowCycle) {
-      patternReason = `High bug rate (${bug_rate_pct}%) despite normal throughput — developer is shipping at pace but quality is not keeping up.`;
-    } else if (highBug && slowCycle) {
-      patternReason = `High bug rate (${bug_rate_pct}%) combined with slow cycle time (${avg_cycle_time_days} days) — both speed and quality are under pressure.`;
+      patternReason = `High bug rate (${bug_rate_pct}%) despite normal throughput — quality is the dominant risk (weighted score contribution: ${sortedScores[0].rawScore.toFixed(1)}).`;
     } else {
-      patternReason = `Quality signals are elevated. Bug rate is ${bug_rate_pct}% which exceeds the acceptable threshold.`;
+      patternReason = `Quality signals are elevated. Bug rate is ${bug_rate_pct}% — total risk score: ${scored.totalScore}/100.`;
     }
   } else if (pattern_hint === 'Needs review') {
-    if (slowCycle && !highBug) {
-      patternReason = `Cycle time is ${avg_cycle_time_days} days — significantly above the healthy range — despite no quality issues. Delivery pace is the primary concern.`;
-    } else if (highLead && slowReview) {
-      patternReason = `Lead time is elevated (${avg_lead_time_days} days) and PR review wait is ${avgWait.toFixed(1)} hours — the pipeline and review process are both contributing to delays.`;
-    } else {
-      patternReason = `Multiple metrics are outside healthy ranges. A holistic review of the workflow is needed.`;
-    }
+    patternReason = `Multiple metrics are elevated — total risk score is ${scored.totalScore}/100. Primary driver: ${scored.primaryIssue}.`;
   }
 
-  return { primaryIssue, secondaryIssue, confidence, pattern: pattern_hint, patternReason };
+  return {
+    primaryIssue:   scored.primaryIssue,
+    secondaryIssue: scored.secondaryIssue,
+    confidence,
+    pattern:        pattern_hint,
+    patternReason,
+    totalScore:     scored.totalScore,
+    health:         scored.health,
+  };
 };
 
 // ─── Reasoning logic — diagnoses root problem from metric combinations ────────

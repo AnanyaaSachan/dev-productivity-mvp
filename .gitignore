@@ -32,5 +32,6 @@ Thumbs.db
 # Coverage reports
 coverage/
 
+app.js/
 
 
