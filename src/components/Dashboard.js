@@ -3,6 +3,7 @@ import ProfileCard from './ProfileCard';
 import NarrativeCard from './NarrativeCard';
 import DecisionScoreCard from './DecisionScoreCard';
 import IntelligenceCard from './IntelligenceCard';
+import PatternDetectionCard from './PatternDetectionCard';
 import DeepSignals from './DeepSignals';
 import ReasoningCard from './ReasoningCard';
 import MetricsGrid from './MetricsGrid';
@@ -13,24 +14,6 @@ import InsightCard from './InsightCard';
 import DrillDownCard from './DrillDownCard';
 import ActionCard from './ActionCard';
 import EmptyState from './EmptyState';
-
-/*
-  Storytelling flow:
-  ─────────────────────────────────────────────────────
-  1. WHO      → ProfileCard       (context: who is this?)
-  2. SUMMARY  → NarrativeCard     (1-line verdict: what's happening overall?)
-  3. PROBLEM  → IntelligenceCard  (what is the main problem + confidence?)
-  4. WHY      → DeepSignals       (why is it happening — per-metric explanation)
-  5. WHY MORE → ReasoningCard     (what do the metric combinations tell us?)
-  6. EVIDENCE → MetricsGrid       (the actual numbers with badges)
-               TeamComparisonCard (you vs team — is this normal?)
-               TrendCard          (is it getting better or worse?)
-               ScorecardCard      (weighted risk score breakdown)
-  7. PATTERN  → InsightCard       (pattern classification)
-  8. DETAILS  → DrillDownCard     (raw PR / bug / deployment data)
-  9. ACTIONS  → ActionCard        (what to do next)
-  ─────────────────────────────────────────────────────
-*/
 
 const Divider = ({ label }) => (
   <div className="flex items-center gap-3 my-2">
@@ -49,7 +32,7 @@ const Dashboard = ({ developer, data }) => {
       {/* 1. WHO */}
       <ProfileCard developer={developer} />
 
-      {/* 2. SUMMARY — one line verdict */}
+      {/* 2. SUMMARY */}
       <Divider label="Summary" />
       <NarrativeCard data={data} />
       <DecisionScoreCard data={data} />
@@ -57,8 +40,9 @@ const Dashboard = ({ developer, data }) => {
       {/* 3. MAIN PROBLEM */}
       <Divider label="Main Problem" />
       <IntelligenceCard data={data} />
+      <PatternDetectionCard data={data} />
 
-      {/* 4 + 5. WHY IT HAPPENED */}
+      {/* 4+5. WHY IT HAPPENED */}
       <Divider label="Why It Happened" />
       <DeepSignals data={data} />
       <ReasoningCard data={data} />

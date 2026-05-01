@@ -41,7 +41,7 @@ const ScorecardCard = ({ data }) => {
         </div>
       </div>
 
-      {/* Per-metric breakdown */}
+      /* Per-metric breakdown */
       <div className="flex flex-col gap-4">
         {sorted.map((m) => {
           const barWidth = Math.min(m.rawScore / 40 * 100, 100); // scale bar to max 40 contribution

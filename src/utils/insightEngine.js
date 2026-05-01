@@ -344,6 +344,167 @@ export const getTeamComparison = (metricRow) => {
   ].filter(Boolean);
 };
 
+// ─── Pattern Detection Engine ─────────────────────────────────────────────────
+export const detectPattern = (metricRow) => {
+  if (!metricRow) return null;
+
+  const {
+    developer_id, month,
+    bug_rate_pct, avg_cycle_time_days, avg_lead_time_days,
+    merged_prs, prod_deployments,
+  } = metricRow;
+
+  const devPRs   = pullRequests.filter((p) => p.developer_id === developer_id && p.month === month);
+  const avgLines = devPRs.length > 0 ? devPRs.reduce((s, p) => s + p.lines_changed, 0) / devPRs.length : 0;
+  const avgWait  = devPRs.length > 0 ? devPRs.reduce((s, p) => s + p.review_wait_hours, 0) / devPRs.length : 0;
+
+  const devDeps  = deployments.filter((d) => d.developer_id === developer_id && d.month === month);
+  const hotfixes = devDeps.filter((d) => d.release_type === 'hotfix');
+
+  const devBugs  = bugReports.filter((b) => b.developer_id === developer_id && b.month_found === month);
+  const hasHighSeverity = devBugs.some((b) => b.severity === 'high');
+
+  // ── Signal flags ─────────────────────────────────────────────────────────
+  const fastCycle   = avg_cycle_time_days <= 3.5;
+  const normalCycle = avg_cycle_time_days > 3.5 && avg_cycle_time_days <= 5;
+  const slowCycle   = avg_cycle_time_days > 5;
+  const fastLead    = avg_lead_time_days <= 3;
+  const highLead    = avg_lead_time_days > 4.5;
+  const zeroBug     = bug_rate_pct === 0;
+  const highBug     = bug_rate_pct >= 50;
+  const highOutput  = merged_prs >= 3 || prod_deployments >= 3;
+  const lowOutput   = merged_prs <= 1 && prod_deployments <= 1;
+  const largePRs    = avgLines > 500;
+  const slowReview  = avgWait > 20;
+  const hasHotfix   = hotfixes.length > 0;
+
+  // ── Pattern matching — ordered by specificity ─────────────────────────────
+  const patterns = [];
+
+  // Fast but risky
+  if (fastCycle && highBug) {
+    patterns.push({
+      name:        'Fast but Risky',
+      icon:        '⚡',
+      color:       'amber',
+      description: `Cycle time is low (${avg_cycle_time_days} days) but bug rate is ${bug_rate_pct}% — moving fast at the cost of quality. Speed without testing discipline creates production risk.`,
+      signals:     [`Cycle time: ${avg_cycle_time_days} days`, `Bug rate: ${bug_rate_pct}%`],
+    });
+  }
+
+  // Slow but stable
+  if (slowCycle && zeroBug && !hasHotfix) {
+    patterns.push({
+      name:        'Slow but Stable',
+      icon:        '🐢',
+      color:       'blue',
+      description: `Cycle time is ${avg_cycle_time_days} days — above the healthy range — but zero bugs escaped and all releases were planned. Thorough but needs to pick up pace.`,
+      signals:     [`Cycle time: ${avg_cycle_time_days} days`, 'Bug rate: 0%', 'No hotfixes'],
+    });
+  }
+
+  // High output, low quality
+  if (highOutput && highBug) {
+    patterns.push({
+      name:        'High Output, Low Quality',
+      icon:        '📦',
+      color:       'red',
+      description: `High throughput (${merged_prs} PRs, ${prod_deployments} deployments) but ${bug_rate_pct}% bug rate — shipping a lot but quality is not keeping up with the pace.`,
+      signals:     [`${merged_prs} merged PRs`, `${prod_deployments} deployments`, `Bug rate: ${bug_rate_pct}%`],
+    });
+  }
+
+  // Consistent performer
+  if (!slowCycle && zeroBug && !hasHotfix && fastLead) {
+    patterns.push({
+      name:        'Consistent Performer',
+      icon:        '🎯',
+      color:       'green',
+      description: `Cycle time, lead time, and quality are all healthy. ${avg_cycle_time_days} day cycle, ${avg_lead_time_days} day lead time, zero bugs — this is the target state.`,
+      signals:     [`Cycle time: ${avg_cycle_time_days} days`, `Lead time: ${avg_lead_time_days} days`, 'Bug rate: 0%'],
+    });
+  }
+
+  // Pipeline bottleneck
+  if (normalCycle && highLead && !highBug) {
+    patterns.push({
+      name:        'Pipeline Bottleneck',
+      icon:        '🚧',
+      color:       'amber',
+      description: `Development is on track (cycle time: ${avg_cycle_time_days} days) but lead time is ${avg_lead_time_days} days — code is ready but stuck in the deployment pipeline.`,
+      signals:     [`Cycle time: ${avg_cycle_time_days} days`, `Lead time: ${avg_lead_time_days} days`],
+    });
+  }
+
+  // Review bottleneck
+  if (slowReview && highLead) {
+    patterns.push({
+      name:        'Review Bottleneck',
+      icon:        '🔍',
+      color:       'amber',
+      description: `PR review wait is ${avgWait.toFixed(1)} hours on average — reviewers are slow to respond, which is the primary driver of the ${avg_lead_time_days} day lead time.`,
+      signals:     [`Review wait: ${avgWait.toFixed(1)}h`, `Lead time: ${avg_lead_time_days} days`],
+    });
+  }
+
+  // Large PR risk
+  if (largePRs && highBug) {
+    patterns.push({
+      name:        'Large PR Risk',
+      icon:        '📋',
+      color:       'red',
+      description: `PRs average ${Math.round(avgLines)} lines — too large for effective review. Combined with ${bug_rate_pct}% bug rate, this suggests reviewers are missing issues in oversized PRs.`,
+      signals:     [`Avg PR size: ${Math.round(avgLines)} lines`, `Bug rate: ${bug_rate_pct}%`],
+    });
+  }
+
+  // Reactive delivery
+  if (hasHotfix && highBug) {
+    patterns.push({
+      name:        'Reactive Delivery',
+      icon:        '🚨',
+      color:       'red',
+      description: `${hotfixes.length} hotfix deployment${hotfixes.length > 1 ? 's' : ''} alongside a ${bug_rate_pct}% bug rate — the team is in a fix-and-ship cycle instead of a plan-build-ship cycle.`,
+      signals:     [`${hotfixes.length} hotfixes`, `Bug rate: ${bug_rate_pct}%`],
+    });
+  }
+
+  // High severity risk
+  if (hasHighSeverity) {
+    patterns.push({
+      name:        'High Severity Risk',
+      icon:        '🔴',
+      color:       'red',
+      description: `A high severity bug escaped to production this month. This is the most critical signal — high severity bugs directly impact users and require immediate post-mortem.`,
+      signals:     ['High severity bug in production'],
+    });
+  }
+
+  // Low output
+  if (lowOutput && !slowCycle) {
+    patterns.push({
+      name:        'Low Throughput',
+      icon:        '📉',
+      color:       'amber',
+      description: `Only ${merged_prs} PR${merged_prs !== 1 ? 's' : ''} merged and ${prod_deployments} deployment${prod_deployments !== 1 ? 's' : ''} this month despite reasonable cycle time — output is lower than expected.`,
+      signals:     [`${merged_prs} merged PRs`, `${prod_deployments} deployments`],
+    });
+  }
+
+  // Fallback if no specific pattern matched
+  if (patterns.length === 0) {
+    patterns.push({
+      name:        'Stable Workflow',
+      icon:        '✅',
+      color:       'green',
+      description: `No specific risk pattern detected. Metrics are within acceptable ranges across speed, quality, and stability.`,
+      signals:     [`Cycle time: ${avg_cycle_time_days} days`, `Bug rate: ${bug_rate_pct}%`, `Lead time: ${avg_lead_time_days} days`],
+    });
+  }
+
+  return patterns;
+};
+
 // ─── Decision Score — overall health score 0-100 (higher = healthier) ─────────
 export const getDecisionScore = (metricRow) => {
   if (!metricRow) return null;

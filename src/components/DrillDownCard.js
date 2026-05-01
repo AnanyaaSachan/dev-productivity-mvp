@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { pullRequests, deployments, bugReports, jiraIssues } from '../data/data';
 
-// ─── Expandable section wrapper ───────────────────────────────────────────────
+// Expandable section wrapper
 const Section = ({ title, count, countColor, children }) => {
   const [open, setOpen] = useState(false);
 
@@ -30,7 +30,7 @@ const Section = ({ title, count, countColor, children }) => {
   );
 };
 
-// ─── Table helpers ────────────────────────────────────────────────────────────
+// Table helpers 
 const Th = ({ children }) => (
   <th className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide pb-2 pr-4 whitespace-nowrap">
     {children}
@@ -54,7 +54,7 @@ const releaseColor = {
   standard: 'bg-green-100 text-green-700',
 };
 
-// ─── Main component ───────────────────────────────────────────────────────────
+//  Main component 
 const DrillDownCard = ({ data }) => {
   if (!data) return null;
 
@@ -77,7 +77,7 @@ const DrillDownCard = ({ data }) => {
 
       <div className="flex flex-col gap-3">
 
-        {/* ── PR Details ─────────────────────────────────────────────────── */}
+        /* PR Details  */
         <Section
           title="Pull Request Details"
           count={`${devPRs.length} PRs`}
@@ -117,7 +117,7 @@ const DrillDownCard = ({ data }) => {
           )}
         </Section>
 
-        {/* ── Bug Details ────────────────────────────────────────────────── */}
+        /*Bug Details */
         <Section
           title="Bug Reports"
           count={devBugs.length === 0 ? 'No bugs' : `${devBugs.length} bug${devBugs.length > 1 ? 's' : ''}`}
@@ -157,7 +157,7 @@ const DrillDownCard = ({ data }) => {
           )}
         </Section>
 
-        {/* ── Deployment Logs ────────────────────────────────────────────── */}
+        /* Deployment Logs  */
         <Section
           title="Deployment Logs"
           count={hotfixCount > 0 ? `${devDeps.length} deployments (${hotfixCount} hotfix)` : `${devDeps.length} deployments`}
@@ -195,7 +195,7 @@ const DrillDownCard = ({ data }) => {
           )}
         </Section>
 
-        {/* ── Jira Issues ────────────────────────────────────────────────── */}
+        /* Jira Issues */
         <Section
           title="Jira Issues"
           count={`${devIssues.length} issues`}
