@@ -16,33 +16,6 @@ This project provides:
 * Organized structure for better workflow
 
 
- Tech Stack
-
-* HTML
-* CSS
-* JavaScript
-* React
-
-
-  Features
-
-*  Dashboard UI
-*  Task tracking
-*  Productivity insights
-*  Clean and responsive design
-
-
-
- Project Structure
-
-
-src/
-     components/
-     data/
-     utils/
-     App.js
-     main.js
-
 
 
  Author
