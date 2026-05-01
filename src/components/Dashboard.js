@@ -14,6 +14,7 @@ import ChartsCard from './ChartsCard';
 import InsightCard from './InsightCard';
 import DrillDownCard from './DrillDownCard';
 import ActionCard from './ActionCard';
+import ManagerView from './ManagerView';
 import EmptyState from './EmptyState';
 
 const Divider = ({ label }) => (
@@ -24,9 +25,15 @@ const Divider = ({ label }) => (
   </div>
 );
 
-const Dashboard = ({ developer, data }) => {
+const Dashboard = ({ developer, data, viewMode }) => {
   if (!developer || !data) return <EmptyState />;
 
+  // ── Manager view ──────────────────────────────────────────────────────────
+  if (viewMode === 'manager') {
+    return <ManagerView developer={developer} data={data} />;
+  }
+
+  // ── Developer view ────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-4">
 

@@ -344,6 +344,79 @@ export const getTeamComparison = (metricRow) => {
   ].filter(Boolean);
 };
 
+// ─── Manager summary — plain language for a manager, not a developer ──────────
+export const getManagerSummary = (metricRow) => {
+  if (!metricRow) return null;
+
+  const {
+    developer_id, month,
+    bug_rate_pct, avg_cycle_time_days, avg_lead_time_days,
+    prod_deployments, merged_prs, pattern_hint,
+  } = metricRow;
+
+  const name = getFirstName(developer_id);
+  const scored = getDecisionScore(metricRow);
+  const teamAvg = getTeamAverages(metricRow.team_name, month);
+
+  const devDeps  = deployments.filter((d) => d.developer_id === developer_id && d.month === month);
+  const hotfixes = devDeps.filter((d) => d.release_type === 'hotfix');
+  const devBugs  = bugReports.filter((b) => b.developer_id === developer_id && b.month_found === month);
+  const hasHighSeverity = devBugs.some((b) => b.severity === 'high');
+
+  // ── Risk level ───────────────────────────────────────────────────────────
+  const riskLevel =
+    scored.overall >= 75 ? 'Low Risk'    :
+    scored.overall >= 50 ? 'Medium Risk' :
+                           'High Risk';
+
+  const riskColor =
+    scored.overall >= 75 ? 'green' :
+    scored.overall >= 50 ? 'amber' :
+                           'red';
+
+  // ── One-line manager verdict ─────────────────────────────────────────────
+  let verdict = '';
+  if (pattern_hint === 'Healthy flow') {
+    verdict = `${name} is performing well this month. No action required.`;
+  } else if (pattern_hint === 'Quality watch') {
+    verdict = `${name} needs attention — a production bug escaped this month. Consider a 1:1 to review testing practices.`;
+  } else {
+    verdict = `${name}'s workflow needs review. Cycle time is elevated and delivery pace is below expectations.`;
+  }
+
+  // ── Key concerns for manager ─────────────────────────────────────────────
+  const concerns = [];
+  if (bug_rate_pct >= 50)          concerns.push(`Production bug rate is ${bug_rate_pct}% — above acceptable threshold.`);
+  if (hasHighSeverity)             concerns.push(`A high severity bug escaped to production — requires post-mortem.`);
+  if (hotfixes.length > 0)         concerns.push(`${hotfixes.length} hotfix deployment${hotfixes.length > 1 ? 's' : ''} this month — reactive release pattern.`);
+  if (avg_cycle_time_days > 5)     concerns.push(`Cycle time is ${avg_cycle_time_days} days — work is taking longer than expected to complete.`);
+  if (avg_lead_time_days > 4.5)    concerns.push(`Lead time is ${avg_lead_time_days} days — code is slow to reach production after completion.`);
+  if (teamAvg && bug_rate_pct > teamAvg.bug_rate_pct + 10)
+    concerns.push(`Bug rate is ${(bug_rate_pct - teamAvg.bug_rate_pct).toFixed(1)}% above team average.`);
+
+  // ── Positive signals for manager ─────────────────────────────────────────
+  const positives = [];
+  if (bug_rate_pct === 0)          positives.push(`Zero production bugs — strong quality discipline.`);
+  if (avg_cycle_time_days <= 3.5)  positives.push(`Cycle time is ${avg_cycle_time_days} days — efficient delivery.`);
+  if (hotfixes.length === 0)       positives.push(`All deployments were planned — no reactive releases.`);
+  if (teamAvg && avg_cycle_time_days < teamAvg.avg_cycle_time_days)
+    positives.push(`Cycle time is below team average (${teamAvg.avg_cycle_time_days} days).`);
+
+  // ── Suggested manager actions ─────────────────────────────────────────────
+  const managerActions = [];
+  if (bug_rate_pct >= 50)          managerActions.push(`Schedule a 1:1 with ${name} to review testing and code review practices.`);
+  if (hasHighSeverity)             managerActions.push(`Initiate a post-mortem for the high severity production bug.`);
+  if (avg_cycle_time_days > 5)     managerActions.push(`Discuss sprint planning with ${name} — tasks may need to be broken down further.`);
+  if (hotfixes.length >= 2)        managerActions.push(`Review the release process with the team — multiple hotfixes indicate a systemic issue.`);
+  if (concerns.length === 0)       managerActions.push(`No immediate action needed. Consider recognising ${name}'s consistent performance.`);
+
+  return {
+    verdict, riskLevel, riskColor,
+    healthScore: scored.overall,
+    concerns, positives, managerActions,
+  };
+};
+
 // ─── Pattern Detection Engine ─────────────────────────────────────────────────
 export const detectPattern = (metricRow) => {
   if (!metricRow) return null;
