@@ -344,6 +344,69 @@ export const getTeamComparison = (metricRow) => {
   ].filter(Boolean);
 };
 
+// ─── Decision Score — overall health score 0-100 (higher = healthier) ─────────
+export const getDecisionScore = (metricRow) => {
+  if (!metricRow) return null;
+
+  const {
+    developer_id, month,
+    bug_rate_pct, avg_cycle_time_days, avg_lead_time_days,
+    prod_deployments, merged_prs,
+  } = metricRow;
+
+  const devDeps  = deployments.filter((d) => d.developer_id === developer_id && d.month === month);
+  const hotfixes = devDeps.filter((d) => d.release_type === 'hotfix');
+  const devBugs  = bugReports.filter((b) => b.developer_id === developer_id && b.month_found === month);
+  const hasHighSeverity = devBugs.some((b) => b.severity === 'high');
+
+  // ── Quality score (0-100, higher = better) ──────────────────────────────
+  // Based on: bug rate, bug severity
+  let qualityScore = 100;
+  qualityScore -= bug_rate_pct * 0.8;           // 50% bug rate → -40
+  if (hasHighSeverity) qualityScore -= 15;       // high severity bug → -15
+  qualityScore = Math.max(0, Math.round(qualityScore));
+
+  // ── Speed score (0-100, higher = better) ────────────────────────────────
+  // Based on: cycle time, lead time
+  let speedScore = 100;
+  if (avg_cycle_time_days > 2)  speedScore -= (avg_cycle_time_days - 2) * 8;
+  if (avg_lead_time_days > 1.5) speedScore -= (avg_lead_time_days - 1.5) * 6;
+  speedScore = Math.max(0, Math.round(speedScore));
+
+  // ── Stability score (0-100, higher = better) ─────────────────────────────
+  // Based on: hotfixes, deployment frequency, PR throughput
+  let stabilityScore = 100;
+  stabilityScore -= hotfixes.length * 20;        // each hotfix → -20
+  if (prod_deployments < 2) stabilityScore -= 15;
+  if (merged_prs < 2)       stabilityScore -= 10;
+  stabilityScore = Math.max(0, Math.round(stabilityScore));
+
+  // ── Overall: weighted average ────────────────────────────────────────────
+  // Quality matters most (50%), Speed (30%), Stability (20%)
+  const overall = Math.round(
+    qualityScore * 0.5 +
+    speedScore   * 0.3 +
+    stabilityScore * 0.2
+  );
+
+  const getLabel = (score) =>
+    score >= 85 ? { label: 'Excellent', icon: '✅', color: 'green' } :
+    score >= 70 ? { label: 'Good',      icon: '✅', color: 'green' } :
+    score >= 50 ? { label: 'Moderate',  icon: '⚠️', color: 'amber' } :
+    score >= 30 ? { label: 'At Risk',   icon: '⚠️', color: 'red'   } :
+                  { label: 'Critical',  icon: '🔴', color: 'red'   };
+
+  return {
+    overall,
+    overallMeta: getLabel(overall),
+    dimensions: [
+      { label: 'Quality',   score: qualityScore,   meta: getLabel(qualityScore),   weight: '50%', desc: 'Bug rate + severity' },
+      { label: 'Speed',     score: speedScore,     meta: getLabel(speedScore),     weight: '30%', desc: 'Cycle time + lead time' },
+      { label: 'Stability', score: stabilityScore, meta: getLabel(stabilityScore), weight: '20%', desc: 'Hotfixes + deployments' },
+    ],
+  };
+};
+
 // ─── Weighted scoring system ──────────────────────────────────────────────────
 // Normalises each metric to a 0–1 risk scale, applies weights, returns scores.
 export const getWeightedScore = (metricRow) => {

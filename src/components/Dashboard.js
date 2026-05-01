@@ -1,6 +1,7 @@
 import React from 'react';
 import ProfileCard from './ProfileCard';
 import NarrativeCard from './NarrativeCard';
+import DecisionScoreCard from './DecisionScoreCard';
 import IntelligenceCard from './IntelligenceCard';
 import DeepSignals from './DeepSignals';
 import ReasoningCard from './ReasoningCard';
@@ -51,6 +52,7 @@ const Dashboard = ({ developer, data }) => {
       {/* 2. SUMMARY — one line verdict */}
       <Divider label="Summary" />
       <NarrativeCard data={data} />
+      <DecisionScoreCard data={data} />
 
       {/* 3. MAIN PROBLEM */}
       <Divider label="Main Problem" />
