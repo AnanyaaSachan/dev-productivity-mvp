@@ -164,6 +164,57 @@ export const getNarrative = (metricRow) => {
   return narrative;
 };
 
+// ─── Team comparison — dev vs team avg with multiplier and verdict ────────────
+export const getTeamComparison = (metricRow) => {
+  if (!metricRow) return null;
+
+  const { team_name, month, avg_cycle_time_days, avg_lead_time_days,
+          merged_prs, prod_deployments, bug_rate_pct } = metricRow;
+
+  const teamAvg = getTeamAverages(team_name, month);
+  if (!teamAvg) return null;
+
+  const compare = (devVal, teamVal, lowerIsBetter, label, unit) => {
+    if (teamVal === 0) return null;
+    const ratio  = devVal / teamVal;
+    const diff   = devVal - teamVal;
+    const better = lowerIsBetter ? diff < -0.1 : diff > 0.1;
+    const worse  = lowerIsBetter ? diff > 0.1  : diff < -0.1;
+
+    let verdict, color;
+    if (better)            { verdict = 'Better than team'; color = 'green'; }
+    else if (worse)        { verdict = 'Worse than team';  color = 'red';   }
+    else                   { verdict = 'On par with team'; color = 'gray';  }
+
+    // Multiplier text e.g. "1.5x higher" or "0.8x lower"
+    let multiplierText = '';
+    if (ratio >= 1.1 || ratio <= 0.9) {
+      const x = ratio.toFixed(1);
+      const dir = lowerIsBetter
+        ? (ratio > 1 ? 'higher' : 'lower')
+        : (ratio > 1 ? 'higher' : 'lower');
+      multiplierText = `${x}x ${dir} than team`;
+    }
+
+    return {
+      label,
+      devVal:  `${devVal}${unit}`,
+      teamVal: `${teamVal}${unit}`,
+      verdict,
+      color,
+      multiplierText,
+    };
+  };
+
+  return [
+    compare(avg_cycle_time_days,  teamAvg.avg_cycle_time_days,  true,  'Cycle Time',            ' days'),
+    compare(avg_lead_time_days,   teamAvg.avg_lead_time_days,   true,  'Lead Time',             ' days'),
+    compare(merged_prs,           teamAvg.merged_prs,           false, 'PR Throughput',         ''),
+    compare(prod_deployments,     teamAvg.prod_deployments,     false, 'Deployment Frequency',  ''),
+    compare(bug_rate_pct,         teamAvg.bug_rate_pct,         true,  'Bug Rate',              '%'),
+  ].filter(Boolean);
+};
+
 // ─── Mini intelligence layer ──────────────────────────────────────────────────
 export const getIntelligence = (metricRow) => {
   if (!metricRow) return null;
