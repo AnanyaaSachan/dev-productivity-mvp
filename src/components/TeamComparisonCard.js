@@ -1,53 +1,98 @@
 
 import React from 'react';
-import { getTeamComparison } from '../utils/insightEngine';
+import { getTeamAverages } from '../utils/insightEngine';
+import { developers } from '../data/data';
 
-const colorMap = {
-  green: { row: 'bg-green-50',  badge: 'bg-green-100 text-green-700',  bar: 'bg-green-400', mult: 'text-green-600' },
-  red:   { row: 'bg-red-50',    badge: 'bg-red-100   text-red-700',    bar: 'bg-red-400',   mult: 'text-red-600'   },
-  gray:  { row: 'bg-gray-50',   badge: 'bg-gray-100  text-gray-500',   bar: 'bg-gray-300',  mult: 'text-gray-400'  },
+const metrics = [
+  { label: 'Cycle Time',            devKey: 'avg_cycle_time_days',  teamKey: 'avg_cycle_time_days',  unit: ' days', lowerIsBetter: true  },
+  { label: 'Lead Time',             devKey: 'avg_lead_time_days',   teamKey: 'avg_lead_time_days',   unit: ' days', lowerIsBetter: true  },
+  { label: 'Bug Rate',              devKey: 'bug_rate_pct',         teamKey: 'bug_rate_pct',         unit: '%',     lowerIsBetter: true  },
+  { label: 'PR Throughput',         devKey: 'merged_prs',           teamKey: 'merged_prs',           unit: ' PRs',  lowerIsBetter: false },
+  { label: 'Deployment Frequency',  devKey: 'prod_deployments',     teamKey: 'prod_deployments',     unit: '',      lowerIsBetter: false },
+];
+
+const getVerdict = (devVal, teamVal, lowerIsBetter) => {
+  const diff = devVal - teamVal;
+  if (Math.abs(diff) < 0.05) return { icon: '➖', color: 'text-gray-400', bg: 'bg-gray-50',   label: 'On par'  };
+  const better = lowerIsBetter ? diff < 0 : diff > 0;
+  return better
+    ? { icon: '✅', color: 'text-green-600', bg: 'bg-green-50',  label: 'Better' }
+    : { icon: '❌', color: 'text-red-600',   bg: 'bg-red-50',    label: 'Worse'  };
 };
 
 const TeamComparisonCard = ({ data }) => {
   if (!data) return null;
 
-  const rows = getTeamComparison(data);
-  if (!rows || rows.length === 0) return null;
+  const teamAvg = getTeamAverages(data.team_name, data.month);
+  if (!teamAvg) return null;
+
+  // Get manager name from developers table
+  const dev = developers.find((d) => d.developer_id === data.developer_id);
+  const managerName = dev?.manager_name || 'Team';
+
+  // Count better / worse
+  let betterCount = 0, worseCount = 0;
+  metrics.forEach(({ devKey, teamKey, lowerIsBetter }) => {
+    const v = getVerdict(data[devKey], teamAvg[teamKey], lowerIsBetter);
+    if (v.label === 'Better') betterCount++;
+    if (v.label === 'Worse')  worseCount++;
+  });
+
+  const overallColor =
+    worseCount === 0  ? 'text-green-700' :
+    worseCount <= 2   ? 'text-amber-700' :
+                        'text-red-700';
 
   return (
     <div className="bg-white rounded-2xl shadow-md p-6">
-      <h3 className="text-xl font-bold text-gray-800 mb-1">Team Comparison</h3>
-      <p className="text-sm text-gray-400 mb-5">
-        How this developer compares to the team average for {data.month}.
+      {/* Header */}
+      <div className="flex items-start justify-between mb-1">
+        <h3 className="text-xl font-bold text-gray-800">You vs Team</h3>
+        <span className={`text-sm font-semibold ${overallColor}`}>
+          {betterCount} better · {worseCount} worse
+        </span>
+      </div>
+      <p className="text-sm text-gray-400 mb-6">
+        Comparing against {data.team_name} team average for {data.month}.
+        Manager: <span className="font-medium text-gray-600">{managerName}</span>
       </p>
 
+      {/* Metric rows */}
       <div className="flex flex-col gap-3">
-        {rows.map((row) => {
-          const s = colorMap[row.color];
-          return (
-            <div key={row.label} className={`rounded-xl px-4 py-3 ${s.row}`}>
-              <div className="flex items-center justify-between mb-1">
-                {/* Metric name */}
-                <span className="text-sm font-semibold text-gray-700">{row.label}</span>
-                {/* Verdict badge */}
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${s.badge}`}>
-                  {row.verdict}
-                </span>
-              </div>
+        {metrics.map(({ label, devKey, teamKey, unit, lowerIsBetter }) => {
+          const devVal  = data[devKey];
+          const teamVal = teamAvg[teamKey];
+          const verdict = getVerdict(devVal, teamVal, lowerIsBetter);
 
+          // Multiplier
+          const ratio = teamVal !== 0 ? devVal / teamVal : 1;
+          const pctDiff = Math.abs(((devVal - teamVal) / teamVal) * 100).toFixed(0);
+          const showMultiplier = Math.abs(devVal - teamVal) >= 0.1;
+
+          return (
+            <div key={label} className={`rounded-xl px-4 py-3 ${verdict.bg}`}>
               <div className="flex items-center justify-between">
-                {/* Dev value vs team avg */}
-                <span className="text-xs text-gray-500">
-                  <span className="font-bold text-gray-800">{row.devVal}</span>
-                  {' '}vs team avg{' '}
-                  <span className="font-semibold text-gray-600">{row.teamVal}</span>
-                </span>
-                {/* Multiplier */}
-                {row.multiplierText && (
-                  <span className={`text-xs font-semibold ${s.mult}`}>
-                    {row.multiplierText}
+                {/* Left: label + verdict icon */}
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">{verdict.icon}</span>
+                  <span className="text-sm font-semibold text-gray-700">{label}</span>
+                </div>
+
+                {/* Right: you vs team */}
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-bold text-gray-800">
+                    {devVal}{unit}
                   </span>
-                )}
+                  <span className="text-gray-400">vs</span>
+                  <span className="text-gray-500">
+                    {teamVal}{unit} team avg
+                  </span>
+                  {showMultiplier && (
+                    <span className={`text-xs font-semibold ml-1 ${verdict.color}`}>
+                      ({pctDiff}% {devVal > teamVal ? 'higher' : 'lower'})
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           );
