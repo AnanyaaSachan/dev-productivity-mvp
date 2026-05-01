@@ -415,33 +415,94 @@ export const getIntelligence = (metricRow) => {
     bug_rate_pct, avg_cycle_time_days, avg_lead_time_days, pattern_hint,
   } = metricRow;
 
-  const devPRs  = pullRequests.filter((p) => p.developer_id === developer_id && p.month === month);
-  const avgWait = devPRs.length > 0
-    ? devPRs.reduce((s, p) => s + p.review_wait_hours, 0) / devPRs.length : 0;
+  // ── Raw signals from fact tables ────────────────────────────────────────
+  const devPRs   = pullRequests.filter((p) => p.developer_id === developer_id && p.month === month);
+  const avgWait  = devPRs.length > 0 ? devPRs.reduce((s, p) => s + p.review_wait_hours, 0) / devPRs.length : 0;
+  const avgLines = devPRs.length > 0 ? devPRs.reduce((s, p) => s + p.lines_changed, 0) / devPRs.length : 0;
 
-  // Confidence: high if top score is clearly dominant (>2x second)
+  const devDeps  = deployments.filter((d) => d.developer_id === developer_id && d.month === month);
+  const hotfixes = devDeps.filter((d) => d.release_type === 'hotfix');
+
+  const devBugs  = bugReports.filter((b) => b.developer_id === developer_id && b.month_found === month);
+  const bugCauses = [...new Set(devBugs.map((b) => b.root_cause_bucket))];
+  const hasHighSeverityBug = devBugs.some((b) => b.severity === 'high');
+
+  const highBug    = bug_rate_pct >= 50;
+  const slowCycle  = avg_cycle_time_days > 5;
+  const highLead   = avg_lead_time_days > 4.5;
+  const largePRs   = avgLines > 500;
+  const slowReview = avgWait > 20;
+
+  // ── Detect secondary issues from raw signals ─────────────────────────────
+  // These go beyond the weighted score — they catch specific patterns
+  const secondarySignals = [];
+
+  if (largePRs && highBug) {
+    secondarySignals.push({
+      label: 'Review Quality Issue',
+      reason: `Large PRs (avg ${Math.round(avgLines)} lines) combined with high bug rate — reviewers are likely missing issues due to PR size.`,
+    });
+  }
+
+  if (hotfixes.length > 0) {
+    secondarySignals.push({
+      label: 'Release Instability',
+      reason: `${hotfixes.length} hotfix deployment${hotfixes.length > 1 ? 's' : ''} this month — reactive releases indicate issues are escaping the standard release process.`,
+    });
+  }
+
+  if (slowReview && highLead) {
+    secondarySignals.push({
+      label: 'Review Bottleneck',
+      reason: `PR review wait is ${avgWait.toFixed(1)} hours on average — slow reviews are directly driving the high lead time.`,
+    });
+  }
+
+  if (hasHighSeverityBug) {
+    secondarySignals.push({
+      label: 'High Severity Bug',
+      reason: `At least one escaped bug was high severity — this increases production risk and warrants a post-mortem.`,
+    });
+  }
+
+  if (bugCauses.includes('test gap') && highBug) {
+    secondarySignals.push({
+      label: 'Test Coverage Gap',
+      reason: `Bug root cause is a test gap — the affected code paths are not covered by automated tests.`,
+    });
+  }
+
+  if (bugCauses.includes('edge case') && highBug) {
+    secondarySignals.push({
+      label: 'Edge Case Handling',
+      reason: `Bug root cause is an unhandled edge case — these are typically missed during design or ticket grooming.`,
+    });
+  }
+
+  // Primary secondary issue = first signal detected (most specific)
+  const secondaryIssue = secondarySignals.length > 0
+    ? secondarySignals[0].label
+    : scored.secondaryIssue;
+
+  // ── Confidence: high if top weighted score is clearly dominant ───────────
   const sortedScores = [...scored.scored].sort((a, b) => b.rawScore - a.rawScore);
   const topScore     = sortedScores[0].rawScore;
   const secondScore  = sortedScores[1].rawScore;
   const confidence   =
-    topScore === 0              ? 'High'   :
-    topScore >= secondScore * 2 ? 'High'   :
+    topScore === 0                ? 'High'   :
+    topScore >= secondScore * 2   ? 'High'   :
     topScore >= secondScore * 1.3 ? 'Medium' :
                                     'Low';
 
-  // Pattern reason
+  // ── Pattern reason ───────────────────────────────────────────────────────
   let patternReason = '';
-  const highBug   = bug_rate_pct >= 50;
-  const slowCycle = avg_cycle_time_days > 5;
-  const highLead  = avg_lead_time_days > 4.5;
-
   if (pattern_hint === 'Healthy flow') {
     patternReason = scored.totalScore <= 15
       ? 'All weighted signals are low — no dominant risk area detected.'
       : `Mostly healthy (risk score: ${scored.totalScore}/100), but a minor ${scored.primaryIssue.toLowerCase()} signal is present.`;
   } else if (pattern_hint === 'Quality watch') {
     if (highBug && !slowCycle) {
-      patternReason = `High bug rate (${bug_rate_pct}%) despite normal throughput — quality is the dominant risk (weighted score contribution: ${sortedScores[0].rawScore.toFixed(1)}).`;
+      patternReason = `High bug rate (${bug_rate_pct}%) despite normal throughput — quality is the dominant risk (weighted contribution: ${sortedScores[0].rawScore.toFixed(1)}).`;
     } else {
       patternReason = `Quality signals are elevated. Bug rate is ${bug_rate_pct}% — total risk score: ${scored.totalScore}/100.`;
     }
@@ -450,13 +511,14 @@ export const getIntelligence = (metricRow) => {
   }
 
   return {
-    primaryIssue:   scored.primaryIssue,
-    secondaryIssue: scored.secondaryIssue,
+    primaryIssue:     scored.primaryIssue,
+    secondaryIssue,
+    secondarySignals,
     confidence,
-    pattern:        pattern_hint,
+    pattern:          pattern_hint,
     patternReason,
-    totalScore:     scored.totalScore,
-    health:         scored.health,
+    totalScore:       scored.totalScore,
+    health:           scored.health,
   };
 };
 
