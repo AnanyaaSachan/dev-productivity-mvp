@@ -4,6 +4,7 @@ import ProfileCard from './ProfileCard';
 import NarrativeCard from './NarrativeCard';
 import MetricsGrid from './MetricsGrid';
 import InsightCard from './InsightCard';
+import ReasoningCard from './ReasoningCard';
 import DeepSignals from './DeepSignals';
 import ActionCard from './ActionCard';
 import EmptyState from './EmptyState';
@@ -19,6 +20,7 @@ const Dashboard = ({ developer, data }) => {
       <NarrativeCard data={data} />
       <MetricsGrid data={data} />
       <InsightCard data={data} />
+      <ReasoningCard data={data} />
       <DeepSignals data={data} />
       <ActionCard data={data} />
     </div>

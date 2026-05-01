@@ -164,6 +164,133 @@ export const getNarrative = (metricRow) => {
   return narrative;
 };
 
+// ─── Reasoning logic — diagnoses root problem from metric combinations ────────
+export const getReasoning = (metricRow) => {
+  if (!metricRow) return null;
+
+  const {
+    developer_id, month,
+    bug_rate_pct, avg_cycle_time_days, avg_lead_time_days,
+    prod_deployments, escaped_bugs,
+  } = metricRow;
+
+  const name = getFirstName(developer_id);
+
+  const highBug      = bug_rate_pct >= 50;
+  const normalCycle  = avg_cycle_time_days <= 5;
+  const slowCycle    = avg_cycle_time_days > 5;
+  const highLead     = avg_lead_time_days > 4.5;
+  const normalLead   = avg_lead_time_days <= 4.5;
+  const zeroBug      = bug_rate_pct === 0;
+
+  const devPRs   = pullRequests.filter((p) => p.developer_id === developer_id && p.month === month);
+  const avgWait  = devPRs.length > 0 ? devPRs.reduce((s, p) => s + p.review_wait_hours, 0) / devPRs.length : 0;
+  const avgLines = devPRs.length > 0 ? devPRs.reduce((s, p) => s + p.lines_changed, 0) / devPRs.length : 0;
+  const slowReview = avgWait > 20;
+  const largePRs   = avgLines > 500;
+
+  const devDeps  = deployments.filter((d) => d.developer_id === developer_id && d.month === month);
+  const hotfixes = devDeps.filter((d) => d.release_type === 'hotfix');
+
+  const devIssues      = jiraIssues.filter((j) => j.developer_id === developer_id && j.month === month);
+  const highComplexity = devIssues.filter((j) => j.story_points >= 5);
+
+  // ── Evaluate each combination and return a diagnosis ──────────────────────
+  const diagnoses = [];
+
+  // 1. High bug + normal cycle → pure quality issue, not a speed issue
+  if (highBug && normalCycle) {
+    diagnoses.push({
+      condition: `Bug rate high (${bug_rate_pct}%) + Cycle time normal (${avg_cycle_time_days} days)`,
+      diagnosis: `This is a quality issue, not a speed issue. ${name} is completing work at a normal pace but bugs are escaping — the problem is in testing or review coverage, not delivery speed.`,
+      type: 'bad',
+    });
+  }
+
+  // 2. High bug + slow cycle → both speed and quality are broken
+  if (highBug && slowCycle) {
+    diagnoses.push({
+      condition: `Bug rate high (${bug_rate_pct}%) + Cycle time slow (${avg_cycle_time_days} days)`,
+      diagnosis: `Both speed and quality are under pressure. ${name} is taking longer to complete work AND bugs are escaping — this suggests tasks are too large, rushed at the end, or lacking proper review.`,
+      type: 'bad',
+    });
+  }
+
+  // 3. Slow cycle + normal lead → bottleneck is in development, not deployment
+  if (slowCycle && normalLead) {
+    diagnoses.push({
+      condition: `Cycle time slow (${avg_cycle_time_days} days) + Lead time normal (${avg_lead_time_days} days)`,
+      diagnosis: `The bottleneck is in development, not deployment. Once ${name} finishes work, it ships quickly — the delay is happening during coding or review, not in the pipeline.`,
+      type: 'warn',
+    });
+  }
+
+  // 4. Normal cycle + high lead → bottleneck is in deployment pipeline
+  if (normalCycle && highLead) {
+    diagnoses.push({
+      condition: `Cycle time normal (${avg_cycle_time_days} days) + Lead time high (${avg_lead_time_days} days)`,
+      diagnosis: `${name} is completing work efficiently but it is taking too long to reach production. The bottleneck is in the deployment pipeline — likely slow approvals, environment queues, or manual gates.`,
+      type: 'warn',
+    });
+  }
+
+  // 5. Slow review + high lead → review wait is the lead time driver
+  if (slowReview && highLead) {
+    diagnoses.push({
+      condition: `PR review wait high (${avgWait.toFixed(1)} hrs) + Lead time high (${avg_lead_time_days} days)`,
+      diagnosis: `The high lead time is directly driven by slow PR reviews. ${name}'s code is ready but sitting idle waiting for reviewers — this is a team process issue, not an individual performance issue.`,
+      type: 'bad',
+    });
+  }
+
+  // 6. Large PRs + high bug → PR size is causing review gaps
+  if (largePRs && highBug) {
+    diagnoses.push({
+      condition: `Large PRs (avg ${Math.round(avgLines)} lines) + Bug rate high (${bug_rate_pct}%)`,
+      diagnosis: `Large PRs are likely contributing to the bug rate. When PRs are too big, reviewers miss edge cases. ${name} should split work into smaller, focused PRs to make reviews more effective.`,
+      type: 'bad',
+    });
+  }
+
+  // 7. High complexity + slow cycle → complexity is the cycle time driver
+  if (highComplexity.length > 0 && slowCycle) {
+    diagnoses.push({
+      condition: `High-complexity issues (${highComplexity.length} tickets ≥5 pts) + Cycle time slow (${avg_cycle_time_days} days)`,
+      diagnosis: `The slow cycle time is explained by task complexity, not inefficiency. ${name} is working on high-point tickets that naturally take longer — this is expected, but breaking them into sub-tasks would help.`,
+      type: 'warn',
+    });
+  }
+
+  // 8. Hotfixes + high bug → reactive pattern
+  if (hotfixes.length >= 1 && highBug) {
+    diagnoses.push({
+      condition: `Hotfix deployments (${hotfixes.length}) + Bug rate high (${bug_rate_pct}%)`,
+      diagnosis: `${name} is in a reactive cycle — bugs escape, then hotfixes are deployed to fix them. This pattern increases risk and disrupts the team. The fix is upstream: better testing before merge, not faster hotfixes after.`,
+      type: 'bad',
+    });
+  }
+
+  // 9. Zero bug + fast cycle + normal lead → everything is working
+  if (zeroBug && !slowCycle && normalLead) {
+    diagnoses.push({
+      condition: `Bug rate 0% + Cycle time ${avg_cycle_time_days} days + Lead time ${avg_lead_time_days} days`,
+      diagnosis: `All three core signals are healthy. ${name} is writing quality code, completing it efficiently, and shipping it quickly. This is the target state for any developer.`,
+      type: 'good',
+    });
+  }
+
+  // 10. Zero bug + slow cycle → quality is good but speed needs work
+  if (zeroBug && slowCycle) {
+    diagnoses.push({
+      condition: `Bug rate 0% + Cycle time slow (${avg_cycle_time_days} days)`,
+      diagnosis: `${name} is writing quality code with no production bugs, but work is taking longer than expected to complete. The focus should be on reducing task scope or removing blockers — quality should not be sacrificed to speed up.`,
+      type: 'warn',
+    });
+  }
+
+  return diagnoses;
+};
+
 // ─── Deep "why" signals — always present, positive or negative ────────────────
 // Each signal has: { text, status } where status = 'good' | 'warn' | 'bad'
 export const getDeepSignals = (developerId, month, metricRow) => {
