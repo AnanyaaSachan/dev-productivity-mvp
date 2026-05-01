@@ -164,6 +164,135 @@ export const getNarrative = (metricRow) => {
   return narrative;
 };
 
+// ─── Trend intelligence — time dimension analysis ────────────────────────────
+export const getTrendIntelligence = (metricRow) => {
+  if (!metricRow) return null;
+
+  const prev = getPreviousMonthData(metricRow.developer_id, metricRow.month);
+  if (!prev) return null;
+
+  const name = getFirstName(metricRow.developer_id);
+
+  const metrics_to_check = [
+    {
+      key:           'bug_rate_pct',
+      label:         'Bug Rate',
+      current:       metricRow.bug_rate_pct,
+      previous:      prev.bug_rate_pct,
+      lowerIsBetter: true,
+      unit:          '%',
+      threshold:     5,
+    },
+    {
+      key:           'avg_cycle_time_days',
+      label:         'Cycle Time',
+      current:       metricRow.avg_cycle_time_days,
+      previous:      prev.avg_cycle_time_days,
+      lowerIsBetter: true,
+      unit:          ' days',
+      threshold:     0.5,
+    },
+    {
+      key:           'avg_lead_time_days',
+      label:         'Lead Time',
+      current:       metricRow.avg_lead_time_days,
+      previous:      prev.avg_lead_time_days,
+      lowerIsBetter: true,
+      unit:          ' days',
+      threshold:     0.5,
+    },
+    {
+      key:           'merged_prs',
+      label:         'PR Throughput',
+      current:       metricRow.merged_prs,
+      previous:      prev.merged_prs,
+      lowerIsBetter: false,
+      unit:          '',
+      threshold:     1,
+    },
+    {
+      key:           'prod_deployments',
+      label:         'Deployments',
+      current:       metricRow.prod_deployments,
+      previous:      prev.prod_deployments,
+      lowerIsBetter: false,
+      unit:          '',
+      threshold:     1,
+    },
+  ];
+
+  const trends = metrics_to_check.map(({ label, current, previous, lowerIsBetter, unit, threshold }) => {
+    const diff   = current - previous;
+    const absDiff = Math.abs(diff);
+
+    if (absDiff < threshold) {
+      return { label, current, previous, unit, direction: 'stable', icon: '➖', color: 'gray',  text: 'Stable',     reasoning: `${label} is unchanged from last month (${previous}${unit} → ${current}${unit}).` };
+    }
+
+    const improved = lowerIsBetter ? diff < 0 : diff > 0;
+
+    // Classify magnitude
+    const pctChange = previous !== 0 ? (absDiff / previous) * 100 : 100;
+    const sharp = pctChange >= 30;
+
+    if (improved) {
+      const magnitude = sharp ? 'significantly improved' : 'improved';
+      return {
+        label, current, previous, unit,
+        direction: 'improving',
+        icon:      '📈',
+        color:     'green',
+        text:      sharp ? 'Improving fast' : 'Improving',
+        reasoning: `${label} ${magnitude} from ${previous}${unit} to ${current}${unit}${sharp ? ' — a strong positive signal' : ''}.`,
+      };
+    } else {
+      const magnitude = sharp ? 'deteriorated sharply' : 'declined';
+      const regressionNote = label === 'Bug Rate' && sharp
+        ? ' This looks like a recent regression — investigate what changed.'
+        : label === 'Cycle Time' && sharp
+        ? ' Work is taking significantly longer — check for new blockers or scope creep.'
+        : '';
+      return {
+        label, current, previous, unit,
+        direction: 'declining',
+        icon:      '📉',
+        color:     'red',
+        text:      sharp ? 'Declining fast' : 'Declining',
+        reasoning: `${label} ${magnitude} from ${previous}${unit} to ${current}${unit}.${regressionNote}`,
+      };
+    }
+  });
+
+  // Overall verdict
+  const improving = trends.filter((t) => t.direction === 'improving').length;
+  const declining = trends.filter((t) => t.direction === 'declining').length;
+
+  let overallVerdict, overallColor, overallIcon;
+  if (declining === 0 && improving >= 2) {
+    overallVerdict = `${name} is on an upward trajectory this month — multiple metrics improved compared to last month.`;
+    overallColor   = 'green';
+    overallIcon    = '📈';
+  } else if (improving === 0 && declining >= 2) {
+    overallVerdict = `${name}'s performance is declining across multiple metrics — this trend needs attention before it becomes a pattern.`;
+    overallColor   = 'red';
+    overallIcon    = '📉';
+  } else if (declining >= 1 && improving === 0) {
+    overallVerdict = `${name} has a declining signal in ${trends.filter(t => t.direction === 'declining').map(t => t.label).join(' and ')} — worth monitoring closely.`;
+    overallColor   = 'red';
+    overallIcon    = '📉';
+  } else if (improving >= 1 && declining === 0) {
+    overallVerdict = `${name} is showing improvement in ${trends.filter(t => t.direction === 'improving').map(t => t.label).join(' and ')} with no declining signals.`;
+    overallColor   = 'green';
+    overallIcon    = '📈';
+  } else {
+    overallVerdict = `${name}'s metrics are mixed — some areas improving, others declining. Focus on the declining signals first.`;
+    overallColor   = 'amber';
+    overallIcon    = '↔️';
+  }
+
+  return { trends, overallVerdict, overallColor, overallIcon, prevMonth: prev.month };
+};
+
 // ─── Team comparison — dev vs team avg with multiplier and verdict ────────────
 export const getTeamComparison = (metricRow) => {
   if (!metricRow) return null;

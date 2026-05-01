@@ -5,6 +5,7 @@ import NarrativeCard from './NarrativeCard';
 import IntelligenceCard from './IntelligenceCard';
 import MetricsGrid from './MetricsGrid';
 import TeamComparisonCard from './TeamComparisonCard';
+import TrendCard from './TrendCard';
 import InsightCard from './InsightCard';
 import ReasoningCard from './ReasoningCard';
 import DeepSignals from './DeepSignals';
@@ -23,6 +24,7 @@ const Dashboard = ({ developer, data }) => {
       <IntelligenceCard data={data} />
       <MetricsGrid data={data} />
       <TeamComparisonCard data={data} />
+      <TrendCard data={data} />
       <InsightCard data={data} />
       <ReasoningCard data={data} />
       <DeepSignals data={data} />
